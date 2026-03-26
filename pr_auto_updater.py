@@ -13,7 +13,7 @@ Purpose: Runs once daily (via cron/Task Scheduler). For each athlete in a
   WHY NOT THE MILESPLIT "API"?
   The old MileSplit developer API (api.milesplit.com) dates from ~2010 and
   its performance endpoints are undocumented / effectively dead. The only
-  live data surface is the modern website, which serves athlete pages via
+  live data surface is the modern website,  which serves athlete pages via
   server-rendered HTML and a few internal JSON XHR calls that we can
   intercept. We therefore treat MileSplit like a website, not an API.
 
@@ -616,7 +616,7 @@ def merge_prs(ms_prs: dict, an_prs: dict) -> dict:
 class ARMSUpdater:
 
     ARMS_URL   = "https://my.armssoftware.com/arms/login"
-    SEARCH_URL = "https://my.armssoftware.com/arms/recruiting/recruits"
+    SEARCH_URL = "https://my.armssoftware.com/arms/recruiting/1257/search"  # <-- Updated URL!
 
     def __init__(self, playwright_instance):
         self.pw      = playwright_instance
@@ -670,7 +670,7 @@ class ARMSUpdater:
         
         # Wait for the UI to load
         try:
-            self.page.wait_for_selector(".ag-root-wrapper", timeout=15000)
+            self.page.wait_for_selector(".ag-root-wrapper", timeout=60000)
             time.sleep(2)
         except PWTimeout:
             log.error("ag-Grid did not load in time.")
