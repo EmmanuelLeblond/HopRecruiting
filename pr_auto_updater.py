@@ -150,6 +150,26 @@ def load_athletes() -> list[dict]:
     log.info(f"Loaded {len(athletes)} athletes from {ATHLETES_CSV}")
     return athletes
 
+US_STATES = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+    "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA",
+    "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA",
+    "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS", "Missouri": "MO",
+    "Montana": "MT", "Nebraska": "NE", "Nevada": "NV", "New Hampshire": "NH", "New Jersey": "NJ",
+    "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH",
+    "Oklahoma": "OK", "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT",
+    "Virginia": "VA", "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY",
+    "District Of Columbia": "DC"
+}
+
+def normalize_state(state_name: str) -> str:
+    """Converts a full state name from ARMS to its 2-letter abbreviation."""
+    # .title() ensures 'north carolina' becomes 'North Carolina' to match the dictionary
+    clean_name = state_name.strip().title() 
+    # If it finds the name, it returns the abbreviation. If not, it just returns whatever it grabbed.
+    return US_STATES.get(clean_name, state_name.strip().upper())
 
 def load_event_map() -> dict:
     with open(EVENT_MAP, encoding="utf-8") as f:
@@ -599,40 +619,61 @@ class ARMSUpdater:
 
     def get_active_recruits(self) -> list[dict]:
         """
-        Scrapes the active recruit roster directly from the ARMS dashboard.
+        Scrapes the active recruit roster directly from the ARMS ag-Grid dashboard.
         Returns a list of dicts: [{name, school, state}]
         """
         if not self._logged_in:
             self.login()
 
-        log.info("Fetching recruit roster directly from ARMS...")
+        log.info("Fetching recruit roster directly from ARMS ag-Grid...")
         
         # Go to the recruit view that shows the table of all active recruits
         self.page.goto(self.SEARCH_URL)
-        self.page.wait_for_load_state("networkidle", timeout=15000)
+        
+        # Wait for the ag-Grid wrapper to render
+        try:
+            self.page.wait_for_selector(".ag-root-wrapper", timeout=15000)
+            time.sleep(3) # Give the grid's internal data a moment to populate
+        except PWTimeout:
+            log.error("ag-Grid did not load in time.")
+            return []
 
         athletes = []
 
-        # ⚠️ CRITICAL: These CSS selectors are placeholders! 
-        # You MUST inspect the ARMS Recruits page to find the actual class names 
-        # or data-attributes for the table rows and data cells.
+        # ⚠️ CRITICAL: You must inspect the column headers in ARMS to find these IDs!
+        # Right-click the 'Full Name' header, inspect, and look for col-id="..."
+        # Do the same for High School and State (once you add them to the view).
+        NAME_COL_ID = "nameSorted"    
+        SCHOOL_COL_ID = "highSchool"  
+        STATE_COL_ID = "stateProvince"      
+
+        # ag-Grid virtualization: We have to scroll the viewport to load new rows
+        viewport = self.page.locator(".ag-center-cols-viewport")
         
-        # Example: if ARMS uses <tr class="recruit-row">, this would be "tr.recruit-row"
-        row_selector = "tr.recruit-row" 
-        
-        # Optional: Handle Pagination if ARMS splits recruits across multiple pages
-        while True:
-            rows = self.page.locator(row_selector)
-            count = rows.count()
+        last_row_count = 0
+        processed_row_indexes = set()
+
+        # Scroll loop to capture virtualized rows
+        for _ in range(50): # Safeguard: Max 50 scrolls so it doesn't run forever
+            # Find all currently rendered rows in the DOM
+            rows = self.page.locator(".ag-center-cols-container .ag-row")
+            current_row_count = rows.count()
             
-            for i in range(count):
+            for i in range(current_row_count):
                 row = rows.nth(i)
+                row_index = row.get_attribute("row-index")
                 
-                # Replace these selectors with the specific classes for each column
+                if row_index in processed_row_indexes:
+                    continue # Skip if we already scraped this row
+                
                 try:
-                    name = row.locator(".col-fullname").inner_text().strip()
-                    school = row.locator(".col-highschool").inner_text().strip()
-                    state = row.locator(".col-state").inner_text().strip()
+                    # Target the specific cells by their col-id
+                    name = row.locator(f"div[col-id='{NAME_COL_ID}']").inner_text().strip()
+                    school = row.locator(f"div[col-id='{SCHOOL_COL_ID}']").inner_text().strip()
+                    raw_state = row.locator(f"div[col-id='{STATE_COL_ID}']").inner_text().strip()
+                    
+                    # Translate the full state name to the 2-letter abbreviation
+                    state = normalize_state(raw_state)
                     
                     if name:
                         athletes.append({
@@ -640,16 +681,18 @@ class ARMSUpdater:
                             "school": school,
                             "state": state
                         })
+                        processed_row_indexes.add(row_index)
                 except Exception as e:
-                    log.debug(f"Skipped a row due to missing data/formatting: {e}")
-
-            # Pagination logic: Check if there's a "Next Page" button
-            next_btn = self.page.locator("button.next-page") # Placeholder selector
-            if next_btn.is_visible() and next_btn.is_enabled():
-                next_btn.click()
-                self.page.wait_for_load_state("networkidle")
-            else:
-                break # Reached the last page
+                    pass # Row might be animating or partially rendered
+            
+            # Scroll down by pressing PageDown inside the grid
+            viewport.press("PageDown")
+            time.sleep(1) # Wait for ag-grid to render the new rows
+            
+            # Break the loop if we've reached the bottom (no new rows loaded)
+            if len(processed_row_indexes) == last_row_count:
+                break
+            last_row_count = len(processed_row_indexes)
 
         log.info(f"Successfully pulled {len(athletes)} recruits from ARMS.")
         return athletes     
