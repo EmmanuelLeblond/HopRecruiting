@@ -270,30 +270,52 @@ class MileSplitScraper:
         self._logged_in = False
 
     def login(self):
-        """Authenticate with MileSplit and store session cookie."""
-        log.info("Logging into MileSplit…")
-        # First GET the login page to capture any CSRF token
-        resp = self.session.get(self.LOGIN_URL)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "lxml")
+        log.info("Logging into ARMS…")
+        self.page.goto(self.ARMS_URL)
+        
+        # Step 1: Fill the email and press Enter
+        email_field = self.page.locator("input[name='email'], input[type='email']").first
+        email_field.wait_for(state="visible")
+        email_field.click()
+        email_field.fill(ARMS_EMAIL)
+        time.sleep(0.5)
+        
+        # Press Enter instead of hunting for the 'Next' button
+        email_field.press("Enter")
+        
+        # Step 2: Wait for the password field to become visible and stable
+        password_field = self.page.locator("input[name='password'], input[type='password']").first
+        try:
+            password_field.wait_for(state="visible", timeout=8000)
+            time.sleep(1.5)  # CRITICAL: Give the page's JavaScript time to wake up
+            
+            # Step 3: Click to focus, fill, and press Enter
+            password_field.click()
+            password_field.fill(ARMS_PASSWORD)
+            time.sleep(0.5)
+            password_field.press("Enter")
+            
+        except PWTimeout:
+            log.warning("Password field never appeared. The email might not have registered.")
+            return
 
-        # MileSplit uses a hidden _token / CSRF field in the login form
-        token_tag = soup.find("input", {"name": "_token"})
-        csrf = token_tag["value"] if token_tag else ""
+        # Step 4: Handle potential "Stay signed in?" screens (Common in Microsoft SSO)
+        try:
+            # If a 'Yes' or 'No' button appears for staying signed in, just hit 'No' to proceed
+            stay_signed_in_btn = self.page.locator("button:has-text('No'), input[value='No']").first
+            stay_signed_in_btn.wait_for(state="visible", timeout=3000)
+            stay_signed_in_btn.click()
+            log.info("Bypassed 'Stay signed in?' screen.")
+        except PWTimeout:
+            pass # No extra screen appeared, which is fine
 
-        payload = {
-            "_method"  : "POST",
-            "_token"   : csrf,
-            "email"    : MILESPLIT_EMAIL,
-            "password" : MILESPLIT_PASSWORD,
-        }
-        resp = self.session.post(self.LOGIN_URL, data=payload, allow_redirects=True)
-        if "logout" in resp.text.lower() or "my account" in resp.text.lower():
-            log.info("MileSplit login successful.")
+        # Wait for the dashboard to load
+        try:
+            self.page.wait_for_url("**/dashboard**", timeout=15000)
+            log.info("ARMS login successful.")
             self._logged_in = True
-        else:
-            log.warning("MileSplit login may have failed — check credentials.")
-        time.sleep(REQUEST_DELAY)
+        except PWTimeout:
+            log.warning("ARMS login timed out; may not be logged in correctly.")
 
     def find_athlete_id(self, name: str, state: str, school: str) -> str:
         """
