@@ -358,8 +358,8 @@ class MileSplitScraper:
 
         # ── Strategy 2: regex sweep for common event/time patterns
         pattern = re.compile(
-            r"(800m?|1500m?|Mile|3000m?|3200m?|5000m?|5K|6K|10[Kk])"
-            r".*?(\d{1,2}:\d{2}\.\d{1,2}|\d{2}\.\d{1,2})",
+            r"(100m?|200m?|400m?|800m?|1500m?|1600m?|Mile|3000m?|3200m?|3\s*Mile|5000m?|5K)"
+            r".*?(\d{1,2}:\d{2}\.\d{1,2}|\d{1,3}\.\d{1,2})",
             re.IGNORECASE | re.DOTALL,
         )
         for m in pattern.finditer(soup.get_text()):
@@ -473,7 +473,8 @@ class AthleticNetScraper:
                     if len(cells) >= 2:
                         event = cells[0].get_text(strip=True)
                         time_ = cells[1].get_text(strip=True)
-                        if re.match(r"(800|Mile|1[05]00|3[02]00|5[Kk]|6[Kk])", event, re.I):
+                        # Fallback: look for event/time pairs in any table on the page
+                        if re.match(r"(100|200|400|800|1500|1600|Mile|3000|3200|3\s*Mile|5[Kk]|5000)", event, re.I):
                             if re.match(r"[\d:.]", time_):
                                 prs[event] = time_
         return prs
@@ -487,16 +488,16 @@ class AthleticNetScraper:
 
 # Canonical event name → list of aliases found on various sites
 EVENT_ALIASES = {
-    "800m" : ["800", "800m", "800 Meter", "800 Meters"],
-    "1500m": ["1500", "1500m", "1500 Meter", "1.5K"],
-    "Mile" : ["Mile", "1 Mile", "1600", "1600m"],
-    "3000m": ["3000", "3000m", "3K", "3 Kilometer"],
-    "3200m": ["3200", "3200m", "2 Mile", "Two Mile"],
-    "5000m": ["5000", "5000m", "5K TF", "5K Track"],
-    "XC 5K": ["5K XC", "5K Cross Country", "XC 5K", "5000 XC"],
-    "XC 6K": ["6K XC", "6K Cross Country", "XC 6K", "6000 XC"],
-    "XC 8K": ["8K XC", "XC 8K"],
-    "10000m": ["10000", "10K", "10,000m"],
+    "100m Time (mm:ss:00)": ["100", "100m", "100 Meter", "100 Meters", "100 Dash"],
+    "200m Time (mm:ss:00)": ["200", "200m", "200 Meter", "200 Meters", "200 Dash"],
+    "400m Time (mm:ss:00)": ["400", "400m", "400 Meter", "400 Meters", "400 Dash"],
+    "800 Time (mm:ss:00):": ["800", "800m", "800 Meter", "800 Meters", "800 Run"],
+    "1500m Time (mm:ss:00)": ["1500", "1500m", "1500 Meter", "1.5K"],
+    "1600m Time (mm:ss:00)": ["1600", "1600m", "1600 Meter", "Mile", "1 Mile"],
+    "3000m Time (mm:ss:00)": ["3000", "3000m", "3K", "3 Kilometer"],
+    "3200m Time (mm:ss:00)": ["3200", "3200m", "2 Mile", "Two Mile"],
+    "3 mile XC Time (mm:ss:00)": ["3 Mile", "3M", "3 Mile XC", "3 Miles", "XC 3 Mile"],
+    "5000m XC Time (mm:ss:00)": ["5000", "5000m", "5K", "5K XC", "5000 XC", "XC 5K", "5K TF"]
 }
 
 def normalize_event(raw: str) -> str | None:
