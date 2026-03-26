@@ -520,8 +520,8 @@ class AthleticNetScraper:
                         # Fallback: look for event/time pairs in any table on the page
                         if re.match(r"(100|200|400|800|1500|1600|Mile|3000|3200|3\s*Mile|5[Kk]|5000)", event, re.I):
                             # Replace this: if re.match(r"[\d:.]", time_):
-                        if re.search(r"\d", time_):
-                            prs[event] = time_
+                                 if re.search(r"\d", time_):
+                                     prs[event] = time_
         return prs
 
 
