@@ -620,42 +620,65 @@ class ARMSUpdater:
     def get_active_recruits(self) -> list[dict]:
         """
         Scrapes the active recruit roster directly from the ARMS ag-Grid dashboard.
+        Uses the native ARMS sidebar filters to isolate target Grad Years.
         Returns a list of dicts: [{name, school, state}]
         """
         if not self._logged_in:
             self.login()
 
         log.info("Fetching recruit roster directly from ARMS ag-Grid...")
-        
-        # Go to the recruit view that shows the table of all active recruits
         self.page.goto(self.SEARCH_URL)
         
-        # Wait for the ag-Grid wrapper to render
+        # Wait for the UI to load
         try:
             self.page.wait_for_selector(".ag-root-wrapper", timeout=15000)
-            time.sleep(3) # Give the grid's internal data a moment to populate
+            time.sleep(2)
         except PWTimeout:
             log.error("ag-Grid did not load in time.")
             return []
 
+        # ─── NATIVE ARMS UI FILTERING ───────────────────────────────────────
+        # Adjust these years to whoever you are actively recruiting
+        TARGET_GRAD_YEARS = ["2025", "2026"] 
+        log.info(f"Applying UI filters for Grad Years: {TARGET_GRAD_YEARS}")
+        
+        # Locate the specific Grad Year filter section using the data-cy attribute
+        grad_filter_block = self.page.locator("app-checkbox-filter[data-cy='graduationYear']")
+        
+        # Loop through our target years and check them in the sidebar
+        for year in TARGET_GRAD_YEARS:
+            year_label = grad_filter_block.locator(f"label:has-text('{year}')").first
+            if year_label.is_visible():
+                # Make sure we don't accidentally un-check it if it's already checked
+                checkbox = year_label.locator("input[type='checkbox']").first
+                if checkbox.is_visible() and not checkbox.is_checked():
+                    year_label.click()
+                    time.sleep(0.5) # Let the UI register the click
+                    
+        # Click the orange "Go" button to apply the filters
+        go_btn = self.page.locator("button:has-text('Go'), input[value='Go']").first
+        if go_btn.is_visible():
+            go_btn.click()
+            
+        # Wait for the grid to refresh with the much smaller list of recruits
+        self.page.wait_for_load_state("networkidle", timeout=10000)
+        time.sleep(3) # Give ag-Grid a moment to render the new rows
+        # ────────────────────────────────────────────────────────────────────
+
         athletes = []
 
-        # ⚠️ CRITICAL: You must inspect the column headers in ARMS to find these IDs!
-        # Right-click the 'Full Name' header, inspect, and look for col-id="..."
-        # Do the same for High School and State (once you add them to the view).
+        # ─── GRID CONFIGURATION ─────────────────────────────────────────────
         NAME_COL_ID = "nameSorted"    
         SCHOOL_COL_ID = "highSchool"  
         STATE_COL_ID = "stateProvince"      
+        # ────────────────────────────────────────────────────────────────────
 
-        # ag-Grid virtualization: We have to scroll the viewport to load new rows
         viewport = self.page.locator(".ag-center-cols-viewport")
-        
         last_row_count = 0
         processed_row_indexes = set()
 
         # Scroll loop to capture virtualized rows
-        for _ in range(50): # Safeguard: Max 50 scrolls so it doesn't run forever
-            # Find all currently rendered rows in the DOM
+        for _ in range(50): 
             rows = self.page.locator(".ag-center-cols-container .ag-row")
             current_row_count = rows.count()
             
@@ -664,15 +687,13 @@ class ARMSUpdater:
                 row_index = row.get_attribute("row-index")
                 
                 if row_index in processed_row_indexes:
-                    continue # Skip if we already scraped this row
+                    continue
                 
                 try:
-                    # Target the specific cells by their col-id
                     name = row.locator(f"div[col-id='{NAME_COL_ID}']").inner_text().strip()
                     school = row.locator(f"div[col-id='{SCHOOL_COL_ID}']").inner_text().strip()
                     raw_state = row.locator(f"div[col-id='{STATE_COL_ID}']").inner_text().strip()
                     
-                    # Translate the full state name to the 2-letter abbreviation
                     state = normalize_state(raw_state)
                     
                     if name:
@@ -683,18 +704,16 @@ class ARMSUpdater:
                         })
                         processed_row_indexes.add(row_index)
                 except Exception as e:
-                    pass # Row might be animating or partially rendered
+                    pass 
             
-            # Scroll down by pressing PageDown inside the grid
             viewport.press("PageDown")
-            time.sleep(1) # Wait for ag-grid to render the new rows
+            time.sleep(1) 
             
-            # Break the loop if we've reached the bottom (no new rows loaded)
             if len(processed_row_indexes) == last_row_count:
                 break
             last_row_count = len(processed_row_indexes)
 
-        log.info(f"Successfully pulled {len(athletes)} recruits from ARMS.")
+        log.info(f"Successfully pulled {len(athletes)} filtered recruits from ARMS.")
         return athletes     
 
     def find_recruit(self, name: str) -> bool:
