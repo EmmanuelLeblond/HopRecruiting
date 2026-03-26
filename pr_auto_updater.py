@@ -104,10 +104,10 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 load_dotenv()
 
 BASE_DIR      = Path(__file__).parent
-ATHLETES_CSV  = BASE_DIR / "athletes.csv"
+#ATHLETES_CSV  = BASE_DIR / "athletes.csv"
 EVENT_MAP     = BASE_DIR / "event_field_map.json"
 LOG_FILE      = BASE_DIR / "pr_updater.log"
-STATE_FILE    = BASE_DIR / "last_known_prs.json"   # persists PRs between runs
+STATE_FILE = BASE_DIR / "roster_cache.json"   # Replaces last_known_prs.json
 
 MILESPLIT_EMAIL    = os.getenv("MILESPLIT_EMAIL")
 MILESPLIT_PASSWORD = os.getenv("MILESPLIT_PASSWORD")
@@ -597,6 +597,63 @@ class ARMSUpdater:
         except PWTimeout:
             log.warning("ARMS login timed out; may not be logged in correctly.")
 
+    def get_active_recruits(self) -> list[dict]:
+        """
+        Scrapes the active recruit roster directly from the ARMS dashboard.
+        Returns a list of dicts: [{name, school, state}]
+        """
+        if not self._logged_in:
+            self.login()
+
+        log.info("Fetching recruit roster directly from ARMS...")
+        
+        # Go to the recruit view that shows the table of all active recruits
+        self.page.goto(self.SEARCH_URL)
+        self.page.wait_for_load_state("networkidle", timeout=15000)
+
+        athletes = []
+
+        # ⚠️ CRITICAL: These CSS selectors are placeholders! 
+        # You MUST inspect the ARMS Recruits page to find the actual class names 
+        # or data-attributes for the table rows and data cells.
+        
+        # Example: if ARMS uses <tr class="recruit-row">, this would be "tr.recruit-row"
+        row_selector = "tr.recruit-row" 
+        
+        # Optional: Handle Pagination if ARMS splits recruits across multiple pages
+        while True:
+            rows = self.page.locator(row_selector)
+            count = rows.count()
+            
+            for i in range(count):
+                row = rows.nth(i)
+                
+                # Replace these selectors with the specific classes for each column
+                try:
+                    name = row.locator(".col-fullname").inner_text().strip()
+                    school = row.locator(".col-highschool").inner_text().strip()
+                    state = row.locator(".col-state").inner_text().strip()
+                    
+                    if name:
+                        athletes.append({
+                            "name": name,
+                            "school": school,
+                            "state": state
+                        })
+                except Exception as e:
+                    log.debug(f"Skipped a row due to missing data/formatting: {e}")
+
+            # Pagination logic: Check if there's a "Next Page" button
+            next_btn = self.page.locator("button.next-page") # Placeholder selector
+            if next_btn.is_visible() and next_btn.is_enabled():
+                next_btn.click()
+                self.page.wait_for_load_state("networkidle")
+            else:
+                break # Reached the last page
+
+        log.info(f"Successfully pulled {len(athletes)} recruits from ARMS.")
+        return athletes     
+
     def find_recruit(self, name: str) -> bool:
         """
         Navigate to the recruits list and open a specific athlete's profile.
@@ -715,69 +772,85 @@ def run_update():
     log.info(f"PR update run started  {datetime.datetime.now():%Y-%m-%d %H:%M}")
     log.info("=" * 60)
 
-    athletes    = load_athletes()
-    event_map   = load_event_map()
-    known_prs   = load_known_prs()
+    event_map = load_event_map()
+    
+    # roster_cache structure: { "Jane Doe": {"ms_id": "123", "an_id": "456", "prs": {"1600m": "4:50.12"}} }
+    roster_cache = load_known_prs() 
 
+    # Phase 1: Get the current roster from ARMS
+    with sync_playwright() as pw:
+        arms = ARMSUpdater(pw)
+        arms.login()
+        arms_roster = arms.get_active_recruits()
+        
+        # If ARMS scraping fails, abort so we don't wipe our cache
+        if not arms_roster:
+            log.error("Failed to pull roster from ARMS. Aborting run.")
+            arms.close()
+            return
+
+    # Phase 2: Scrape PR data
     ms_scraper = MileSplitScraper()
-    ms_scraper.login()          # single login for all athletes
-
+    ms_scraper.login()
     an_scraper = AthleticNetScraper()
 
-    all_updates = {}  # name → {event: time}  — only athletes with new PRs
+    all_updates = {}  # Only stores athletes with new PRs that need to be sent back to ARMS
 
-    # ── Phase 1: Scrape all PR data ──────────────────────────────────────────
-    for athlete in athletes:
+    for athlete in arms_roster:
         name   = athlete["name"]
         state  = athlete["state"]
         school = athlete["school"]
         log.info(f"Processing: {name} | {school} | {state}")
 
+        # Initialize this athlete in the cache if they are new from ARMS
+        if name not in roster_cache:
+            roster_cache[name] = {"ms_id": "", "an_id": "", "prs": {}}
+
+        cached_data = roster_cache[name]
+
         # ── MileSplit ────────────────────────────────────────────────────────
-        ms_id = athlete.get("milesplit_id") or ms_scraper.find_athlete_id(name, state, school)
+        ms_id = cached_data.get("ms_id") or ms_scraper.find_athlete_id(name, state, school)
         ms_prs = {}
         if ms_id:
             ms_prs = ms_scraper.get_prs(ms_id)
-            # Save the ID back to avoid future lookups
-            athlete["milesplit_id"] = ms_id
+            cached_data["ms_id"] = ms_id  # Save to cache so we don't search next time
         else:
             log.warning(f"  No MileSplit ID found for {name}")
 
         # ── Athletic.net ─────────────────────────────────────────────────────
-        an_id = athlete.get("athleticnet_id") or an_scraper.find_athlete_id(name, state, school)
+        an_id = cached_data.get("an_id") or an_scraper.find_athlete_id(name, state, school)
         an_prs = {}
         if an_id:
             an_prs = an_scraper.get_prs(an_id)
-            athlete["athleticnet_id"] = an_id
+            cached_data["an_id"] = an_id
         else:
-            log.info(f"  No Athletic.net ID found for {name} (continuing with MileSplit only)")
+            log.info(f"  No Athletic.net ID found for {name}")
 
         # ── Merge and compare ────────────────────────────────────────────────
         combined = merge_prs(ms_prs, an_prs)
         log.info(f"  Combined PRs: {combined}")
 
-        # Filter to only events that are new or improved vs. last known
-        prev = known_prs.get(name, {})
+        prev_prs = cached_data.get("prs", {})
         new_or_improved = {
-            event: t
-            for event, t in combined.items()
-            if event not in prev or is_faster(t, prev[event])
+            event: t for event, t in combined.items()
+            if event not in prev_prs or is_faster(t, prev_prs[event])
         }
 
         if new_or_improved:
             log.info(f"  NEW / IMPROVED PRs for {name}: {new_or_improved}")
             all_updates[name] = new_or_improved
-            # Merge into known_prs (keeping best for each event)
+            
+            # Update the cache with the new best times
             for event, t in combined.items():
-                if event not in prev or is_faster(t, prev[event]):
-                    known_prs.setdefault(name, {})[event] = t
+                if event not in prev_prs or is_faster(t, prev_prs[event]):
+                    cached_data["prs"][event] = t
         else:
             log.info(f"  No new PRs for {name}.")
 
-    # Save updated state
-    save_known_prs(known_prs)
+    # Save IDs and PRs permanently to disk
+    save_known_prs(roster_cache)
 
-    # ── Phase 2: Write updates into ARMS ─────────────────────────────────────
+    # Phase 3: Write updates back into ARMS
     if not all_updates:
         log.info("No athletes with new PRs — skipping ARMS update.")
         log.info("Run complete.")
