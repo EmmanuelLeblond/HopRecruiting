@@ -169,16 +169,37 @@ def save_known_prs(data: dict):
         json.dump(data, f, indent=2)
 
 
+def clean_time_string(t: str) -> str:
+    """
+    Strips common T&F annotations: c (converted), h (hand), w (wind-aided), 
+    PR, SR, and wind readings in parentheses (e.g., '(2.1)').
+    """
+    # Remove anything in parentheses (like wind readings)
+    t = re.sub(r"\(.*?\)", "", t)
+    
+    # Extract only the time format (digits, colons, decimals)
+    # This automatically drops 'c', 'h', 'w', 'PR', etc.
+    match = re.search(r"(\d{1,2}:\d{2}\.\d{1,2}|\d{1,3}\.\d{1,2}|\d{1,3})", t)
+    if match:
+        return match.group(1)
+    
+    return t.strip()
+
 def time_to_seconds(t: str) -> float:
-    """Convert a time string like '4:12.34' or '9:34.1' or '27.83' to float seconds."""
-    t = t.strip()
-    if ":" in t:
-        parts = t.split(":")
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + float(parts[1])
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
-    return float(t)
+    """Convert a sanitized time string to float seconds."""
+    t = clean_time_string(t)
+    try:
+        if ":" in t:
+            parts = t.split(":")
+            if len(parts) == 2:
+                return int(parts[0]) * 60 + float(parts[1])
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        return float(t)
+    except ValueError:
+        # If it's a completely invalid time (e.g., "DNF", "DQ", "NH"),
+        # return infinity so it never counts as a "faster" PR.
+        return float('inf')
 
 
 def is_faster(new_time: str, old_time: str) -> bool:
@@ -350,16 +371,18 @@ class MileSplitScraper:
                     continue
                 event = cells[event_col].get_text(strip=True)
                 time_ = cells[pr_col].get_text(strip=True)
-                if event and re.match(r"[\d:.]", time_):
+                # Replace this: if event and re.match(r"[\d:.]", time_):
+                if event and re.search(r"\d", time_):  # Just ensure there's a number in the string
                     prs[event] = time_
 
         if prs:
             return prs
 
         # ── Strategy 2: regex sweep for common event/time patterns
+        # The optional [a-zA-Z\s]* catches things like 'c', 'h', ' PR'
         pattern = re.compile(
             r"(100m?|200m?|400m?|800m?|1500m?|1600m?|Mile|3000m?|3200m?|3\s*Mile|5000m?|5K)"
-            r".*?(\d{1,2}:\d{2}\.\d{1,2}|\d{1,3}\.\d{1,2})",
+            r".*?(\d{1,2}:\d{2}\.\d{1,2}[a-zA-Z\s]*|\d{1,3}\.\d{1,2}[a-zA-Z\s]*)",
             re.IGNORECASE | re.DOTALL,
         )
         for m in pattern.finditer(soup.get_text()):
@@ -462,7 +485,8 @@ class AthleticNetScraper:
                 if len(cells) >= 2:
                     event = cells[0].get_text(strip=True)
                     time_ = cells[1].get_text(strip=True)
-                    if event and re.match(r"[\d:.]", time_):
+                    # Replace this: if event and re.match(r"[\d:.]", time_):
+                    if event and re.search(r"\d", time_): 
                         prs[event] = time_
 
         # Fallback: look for event/time pairs in any table on the page
@@ -475,8 +499,9 @@ class AthleticNetScraper:
                         time_ = cells[1].get_text(strip=True)
                         # Fallback: look for event/time pairs in any table on the page
                         if re.match(r"(100|200|400|800|1500|1600|Mile|3000|3200|3\s*Mile|5[Kk]|5000)", event, re.I):
-                            if re.match(r"[\d:.]", time_):
-                                prs[event] = time_
+                            # Replace this: if re.match(r"[\d:.]", time_):
+                        if re.search(r"\d", time_):
+                            prs[event] = time_
         return prs
 
 
