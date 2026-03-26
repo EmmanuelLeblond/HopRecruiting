@@ -59,8 +59,8 @@ Purpose: Runs once daily (via cron/Task Scheduler). For each athlete in a
   playwright install chromium
 
   .env file (same directory as this script):
-    MILESPLIT_EMAIL=coach@university.edu
-    MILESPLIT_PASSWORD=your_password
+    MILESPLIT_EMAIL=cullendoody@yahoo.com
+    MILESPLIT_PASSWORD=hc25rox
     ARMS_EMAIL=cullendoody@yahoo.com
     ARMS_PASSWORD=%ZXofLBx9qkk%0m
 
