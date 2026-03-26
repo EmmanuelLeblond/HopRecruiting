@@ -71,15 +71,17 @@ Purpose: Runs once daily (via cron/Task Scheduler). For each athlete in a
 
   event_field_map.json  (maps event names to ARMS field labels):
     {
-      "800m": "800 Meter PR",
-      "Mile": "Mile PR",
-      "1500m": "1500 Meter PR",
-      "3000m": "3000 Meter PR",
-      "5000m": "5000 Meter PR",
-      "3200m": "3200 Meter PR",
-      "XC 5K": "XC 5K PR",
-      "XC 6K": "XC 6K PR"
-    }
+  "800 Time (mm:ss:00):"  : "800 Meter PR",
+  "1500m Time (mm:ss:00)" : "1500 Meter PR",
+  "1600m Time (mm:ss:00)"  : "1600 PR",
+  "3000m Time (mm:ss:00)" : "3000 Meter PR",
+  "3200m Time (mm:ss:00)" : "3200 Meter PR",
+  "5000m XC Time (mm:ss:00)" : "XC 5000 Meter PR",
+  "3 mile XC Time (mm:ss:00)" : "XC 3 mile PR",
+  "100m Time (mm:ss:00)" : "100m PR",
+  "200m Time (mm:ss:00)" : "200m PR",
+  "400m Time (mm:ss:00)": "400 Meter PR"
+}
 
 ═════════════════════════════════════════════════════════════════════════════
 """
