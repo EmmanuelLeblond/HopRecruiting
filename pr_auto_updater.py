@@ -766,7 +766,7 @@ class ARMSUpdater:
 
         # Navigate to the tab that holds PR fields
         # Common tab names in ARMS: "Questionnaire", "Athletic Info", "Profile"
-        for tab_label in ["Athletic Information", "Questionnaire", "Track & Field", "Profile"]:
+        for tab_label in ["Athletic", "Athletic Information", "Questionnaire", "Track & Field", "Profile"]:
             tab = self.page.locator(f"text={tab_label}").first
             if tab.is_visible():
                 tab.click()
@@ -780,16 +780,13 @@ class ARMSUpdater:
                 log.debug(f"    No ARMS field mapping for event '{canonical_event}', skipping.")
                 continue
 
-            # Find the input field by its associated label
+            # FINDING THE INPUT FIELD (Based on ARMS table structure)
             try:
-                # Try label[for] association first
-                label = self.page.locator(f"label:has-text('{arms_label}')").first
-                input_id = label.get_attribute("for")
-                if input_id:
-                    field = self.page.locator(f"#{input_id}")
-                else:
-                    # Fallback: sibling input next to the label
-                    field = label.locator("xpath=following-sibling::input[1]")
+                # 1. Find the table row (<tr>) containing the ARMS field label (e.g., "1600m")
+                row = self.page.locator(f"tr:has-text('{arms_label}')").first
+                
+                # 2. Find the input field inside that specific row
+                field = row.locator("input").first
 
                 current_val = field.input_value()
                 if current_val == new_time:
@@ -813,9 +810,15 @@ class ARMSUpdater:
             # Click Save button
             try:
                 save_btn = self.page.locator("button:has-text('Save'), input[value='Save']").first
-                save_btn.click()
-                self.page.wait_for_load_state("networkidle", timeout=6000)
-                log.info(f"  Saved {updated_count} field(s) for {name}.")
+                
+                # --- DRY RUN MODE: Comment out the click so it doesn't save ---
+                # save_btn.click()
+                # self.page.wait_for_load_state("networkidle", timeout=6000)
+                # log.info(f"  Saved {updated_count} field(s) for {name}.")
+                
+                log.info(f"  DRY RUN SUCCESS: Script successfully typed {updated_count} fields for {name}. It did NOT click Save.")
+                time.sleep(10) # Pause for 10 seconds so you can look at the screen and verify
+                
             except Exception as e:
                 log.warning(f"  Save button not found / failed for {name}: {e}")
         else:
@@ -850,6 +853,20 @@ def run_update():
             log.error("Failed to pull roster from ARMS. Aborting run.")
             arms.close()
             return
+            
+        # ─── TESTING SAFETIES ──────────────────────────────────────────────
+        TEST_ATHLETE = "Jason Bunn" 
+        
+        # Overwrite the roster to ONLY include the test athlete
+        arms_roster = [a for a in arms_roster if TEST_ATHLETE.lower() in a["name"].lower()]
+        
+        if not arms_roster:
+            log.error(f"Test athlete '{TEST_ATHLETE}' not found on the ARMS dashboard. Aborting.")
+            arms.close()
+            return
+        
+        log.info(f"TEST MODE: Only running script for {arms_roster[0]['name']}")
+        # ───────────────────────────────────────────────────────────────────
 
     # Phase 2: Scrape PR data
     ms_scraper = MileSplitScraper()
