@@ -118,7 +118,7 @@ MILESPLIT_BASE  = "https://www.milesplit.com"
 ATHLETICNET_BASE = "https://www.athletic.net"
 
 REQUEST_DELAY = 1.5   # seconds between HTTP requests (polite scraping)
-HEADLESS      = True  # set False to watch the browser while debugging
+HEADLESS      = False  # set False to watch the browser while debugging
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
