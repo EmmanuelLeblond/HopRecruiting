@@ -295,7 +295,7 @@ class MileSplitScraper:
             log.warning("MileSplit login may have failed — check credentials.")
         time.sleep(REQUEST_DELAY)
 
-    def find_athlete_id(self, name: str, state: str, school: str) -> str | None:
+    def find_athlete_id(self, name: str, state: str, school: str) -> str:
         """
         Search MileSplit for an athlete. Returns the athlete ID string or None.
         Strategy: use the internal search endpoint, filter by state, then fuzzy-
@@ -442,7 +442,7 @@ class AthleticNetScraper:
             )
         })
 
-    def find_athlete_id(self, name: str, state: str, school: str) -> str | None:
+    def find_athlete_id(self, name: str, state: str, school: str) -> str:
         """Search athletic.net and return athlete ID or None."""
         query = f"{name} {state}"
         try:
@@ -545,7 +545,7 @@ EVENT_ALIASES = {
     "5000m XC Time (mm:ss:00)": ["5000", "5000m", "5K", "5K XC", "5000 XC", "XC 5K", "5K TF"]
 }
 
-def normalize_event(raw: str) -> str | None:
+def normalize_event(raw: str) -> str:
     """Map a raw event name from a website to a canonical name, or None."""
     raw = raw.strip()
     for canonical, aliases in EVENT_ALIASES.items():
