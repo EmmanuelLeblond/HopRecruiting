@@ -700,8 +700,13 @@ class ARMSUpdater:
             go_btn.click()
             
         # Wait for the grid to refresh with the much smaller list of recruits
-        self.page.wait_for_load_state("networkidle", timeout=10000)
-        time.sleep(3) # Give ag-Grid a moment to render the new rows
+        # Increased to 60 seconds (60000ms) to handle ARMS loading speeds
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=60000)
+        except PWTimeout:
+            log.warning("Network took longer than 60s to idle, but moving forward anyway...")
+            
+        time.sleep(5) # Give ag-Grid a generous moment to render the new rows visually
         # ────────────────────────────────────────────────────────────────────
 
         athletes = []
@@ -894,7 +899,7 @@ def run_update():
             return
             
         # ─── TESTING SAFETIES ──────────────────────────────────────────────
-        TEST_ATHLETE = "Jason Bunn" 
+        TEST_ATHLETE = "William Ahmuty" 
         
         # Overwrite the roster to ONLY include the test athlete
         arms_roster = [a for a in arms_roster if TEST_ATHLETE.lower() in a["name"].lower()]
