@@ -606,9 +606,26 @@ class ARMSUpdater:
     def login(self):
         log.info("Logging into ARMS…")
         self.page.goto(self.ARMS_URL)
+        
+        # Step 1: Fill the email
         self.page.fill("input[name='email'], input[type='email']", ARMS_EMAIL)
-        self.page.fill("input[name='password'], input[type='password']", ARMS_PASSWORD)
-        self.page.click("button[type='submit'], input[type='submit']")
+        
+        # Step 2: Click the 'Next' or 'Continue' button to reveal the password field
+        # We use a broad selector to catch standard SSO button formats
+        next_btn = self.page.locator("button:has-text('Next'), button:has-text('Continue'), input[value='Next'], button[type='submit']").first
+        next_btn.click()
+        
+        # Step 3: Wait for the password field to actually become visible on screen
+        password_field = self.page.locator("input[name='password'], input[type='password']").first
+        password_field.wait_for(state="visible", timeout=8000)
+        
+        # Step 4: Fill the password
+        password_field.fill(ARMS_PASSWORD)
+        
+        # Step 5: Click the final Sign In / Submit button
+        sign_in_btn = self.page.locator("button:has-text('Sign in'), button:has-text('Log in'), button:has-text('Submit'), input[type='submit'], button[type='submit']").first
+        sign_in_btn.click()
+
         # Wait for the dashboard to load
         try:
             self.page.wait_for_url("**/dashboard**", timeout=15000)
