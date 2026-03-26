@@ -61,8 +61,8 @@ Purpose: Runs once daily (via cron/Task Scheduler). For each athlete in a
   .env file (same directory as this script):
     MILESPLIT_EMAIL=coach@university.edu
     MILESPLIT_PASSWORD=your_password
-    ARMS_EMAIL=coach@university.edu
-    ARMS_PASSWORD=your_arms_password
+    ARMS_EMAIL=cullendoody@yahoo.com
+    ARMS_PASSWORD=%ZXofLBx9qkk%0m
 
   athletes.csv (columns):
     name, school, state, milesplit_id (optional), athleticnet_id (optional)
